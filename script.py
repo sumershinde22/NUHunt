@@ -38,15 +38,13 @@ chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
 
 
-def scrape_jobs():
+def login():
+    """Logs into the Northeastern job portal."""
     try:
+        print("Logging into the Northeastern job portal...")
+        driver.get("https://northeastern-csm.symplicity.com/students/app/home")
+
         print("Starting the WebDriver in headless mode...")
-
-        # Visit the login page
-        login_url = "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=500&page=1&sort=!postdate&ocr=f&targeted_academic_majors=0160&el_work_term=62e86769398ef06e8102c40d39502733&exclude_applied_jobs=1"
-        print(f"Navigating to login URL: {login_url}")
-        driver.get(login_url)
-
         # Locate and click the "Current Students and Alumni" button
         print("Locating and clicking 'Current Students and Alumni' button...")
         button = driver.find_element(By.XPATH, "//input[@value='Current Students and Alumni']")
@@ -84,6 +82,56 @@ def scrape_jobs():
 
         # Switch back to the main content
         driver.switch_to.default_content()
+        print("Login successful.")
+    except Exception as e:
+        print(f"An error occurred during login: {e}")
+        driver.quit()
+        raise e
+
+
+def update_supabase(jobs, table_name):
+    """Updates the Supabase table by inserting new jobs and removing outdated ones."""
+    try:
+        print(f"Updating table '{table_name}'...")
+        # Fetch existing jobs from Supabase
+        existing_jobs = supabase.table(table_name).select("id", "title", "company").execute().data
+        existing_jobs_set = {(job["title"], job["company"]): job["id"] for job in existing_jobs}
+
+        # Identify new jobs to add
+        new_jobs = [job for job in jobs if (job["title"], job["company"]) not in existing_jobs_set]
+
+        # Identify outdated jobs to delete
+        current_jobs_set = {(job["title"], job["company"]) for job in jobs}
+        outdated_jobs = [job_id for (title, company), job_id in existing_jobs_set.items()
+                         if (title, company) not in current_jobs_set]
+
+        # Insert new jobs
+        if new_jobs:
+            response = supabase.table(table_name).insert(new_jobs).execute()
+            print(f"Inserted {len(new_jobs)} new jobs into '{table_name}'.")
+
+        # Delete outdated jobs
+        if outdated_jobs:
+            for job_id in outdated_jobs:
+                supabase.table(table_name).delete().eq("id", job_id).execute()
+            print(f"Deleted {len(outdated_jobs)} outdated jobs from '{table_name}'.")
+
+        # Send notifications for new jobs
+        if new_jobs:
+            send_email_notification(new_jobs, table_name)
+
+        return len(new_jobs)
+
+    except Exception as e:
+        print(f"Failed to update table '{table_name}': {e}")
+        return 0
+
+
+def scrape_jobs(url, table_name):
+    """Scrapes jobs from a specific URL and updates the specified Supabase table."""
+    try:
+        print(f"Navigating to {url}...")
+        driver.get(url)
 
         # Wait for job list to load
         WebDriverWait(driver, 60).until(
@@ -91,7 +139,7 @@ def scrape_jobs():
         )
 
         # Scrape job titles and companies
-        print("Scraping job titles and companies...")
+        print(f"Scraping jobs for table '{table_name}'...")
         jobs = []
         job_elements = driver.find_elements(By.CLASS_NAME, "list-item-body")
         for job_element in job_elements:
@@ -99,57 +147,30 @@ def scrape_jobs():
                 title = job_element.find_element(By.CLASS_NAME, "list-item-title").text
                 company = job_element.find_element(By.CLASS_NAME, "list-item-subtitle").text
 
-                # Filter titles containing 'Software' or 'AI'
-                if (("Software" in title or "AI" in title) or "Machine Learning" in title) or "Artificial Intelligence" in title:
+                # Filter titles containing 'Software', 'AI', etc.
+                if "Software" in title or "AI" in title or "Machine Learning" in title or "Artificial Intelligence" in title:
                     jobs.append({"title": title, "company": company})
             except Exception as e:
                 print(f"Error extracting job details: {e}")
 
         print(f"Scraped {len(jobs)} jobs matching the criteria.")
-
-        # Insert jobs into Supabase and return new jobs count
         if jobs:
-            return insert_into_supabase(jobs)
+            return update_supabase(jobs, table_name)
         else:
+            print(f"No jobs found for '{table_name}'.")
             return 0
 
     except Exception as e:
         print(f"An error occurred during scraping: {e}")
         return 0
 
-    finally:
-        print("Closing the WebDriver...")
-        driver.quit()
 
-
-def insert_into_supabase(jobs):
-    try:
-        print("Inserting data into Supabase...")
-        existing_jobs = supabase.table("jobs").select("title", "company").execute().data
-        existing_jobs_set = {(job["title"], job["company"]) for job in existing_jobs}
-
-        new_jobs = [job for job in jobs if (job["title"], job["company"]) not in existing_jobs_set]
-
-        if new_jobs:
-            response = supabase.table("jobs").insert(new_jobs).execute()
-            print(f"Inserted {len(new_jobs)} new jobs into Supabase.")
-            print("Response:", response)
-            send_email_notification(new_jobs)
-            return len(new_jobs)
-        else:
-            print("No new jobs found.")
-            return 0
-
-    except Exception as e:
-        print(f"Failed to insert data into Supabase: {e}")
-        return 0
-
-
-def send_email_notification(new_jobs):
+def send_email_notification(new_jobs, table_name):
+    """Sends an email notification with the new job postings."""
     try:
         print("Sending email notification...")
-        subject = "New Jobs Alert"
-        body = "The following new jobs have been posted:\n\n"
+        subject = f"New Jobs Alert - {table_name}"
+        body = f"New jobs have been posted in the '{table_name}' table:\n\n"
         for job in new_jobs:
             body += f"Title: {job['title']}\nCompany: {job['company']}\n\n"
 
@@ -159,17 +180,26 @@ def send_email_notification(new_jobs):
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain"))
 
-        # Set up the SMTP server
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(email_address, email_password)
             server.send_message(msg)
 
-        print("Email sent successfully!")
+        print("Email sent successfully.")
     except Exception as e:
         print(f"Failed to send email: {e}")
 
 
-# Run the scraping job and return the number of new jobs added
-new_jobs_count = scrape_jobs()
-print(f"Number of new jobs found: {new_jobs_count}")
+# Main script
+try:
+    login()
+    job_links = {
+        "fall_khoury_eng": "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=2000&page=1&sort=!postdate&ocr=f&targeted_academic_majors=0060,0160&el_work_term=62e86769398ef06e8102c40d39502733&exclude_applied_jobs=1",
+        "summer_khoury": "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=2000&page=1&sort=!postdate&ocr=f&targeted_academic_majors=0160&el_work_term=37226e910d4151f066cd60e5177508b6&exclude_applied_jobs=1"
+    }
+
+    for table_name, url in job_links.items():
+        new_jobs_count = scrape_jobs(url, table_name)
+        print(f"Number of new jobs added to '{table_name}': {new_jobs_count}")
+finally:
+    driver.quit()
