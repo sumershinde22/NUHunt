@@ -21,7 +21,7 @@ supabase: Client = create_client(supabase_url, supabase_key)
 
 # Set up ChromeDriver
 chrome_service = Service(
-    "/Users/sumershinde/chromedriver-mac-arm64/chromedriver")  # Update with your actual ChromeDriver path
+    "chromedriver/chromedriver")  # Update with your actual ChromeDriver path
 chrome_options = Options()
 chrome_options.add_argument("--headless")  # Headless mode to avoid opening browser
 chrome_options.add_argument("--disable-gpu")
