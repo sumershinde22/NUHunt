@@ -6,6 +6,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from webdriver_manager.chrome import ChromeDriverManager
 import os
 import time
 
@@ -19,9 +20,8 @@ supabase_key = os.getenv("SUPABASE_KEY")
 # Initialize Supabase client
 supabase: Client = create_client(supabase_url, supabase_key)
 
-# Set up ChromeDriver
-chrome_service = Service(
-    "chromedriver/chromedriver")  # Update with your actual ChromeDriver path
+# Set up ChromeDriver dynamically
+chrome_service = Service(ChromeDriverManager().install())
 chrome_options = Options()
 chrome_options.add_argument("--headless")  # Headless mode to avoid opening browser
 chrome_options.add_argument("--disable-gpu")
