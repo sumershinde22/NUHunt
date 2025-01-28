@@ -1,25 +1,33 @@
 name: NUWorksBot
 
 on:
+  workflow_dispatch: # Allows you to trigger manually
   schedule:
-    - cron: '0 * * * *'  # Every hour
+    - cron: "0 * * * *" # Runs every hour (adjust as needed)
 
 jobs:
-  scrape:
+  scrape_jobs:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.9"
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          pip install selenium
-          pip install python-dotenv
+          python -m pip install --upgrade pip
+          pip install selenium python-dotenv supabase
 
-      - name: Run Scraper
-        run: python script.py
+      - name: Run job scraper
+        env: # Pass secrets as environment variables
+          USERNAME: ${{ secrets.USERNAME }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python script.py
