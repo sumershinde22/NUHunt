@@ -52,7 +52,7 @@ def scrape_jobs():
         button = driver.find_element(By.XPATH, "//input[@value='Current Students and Alumni']")
         button.click()
 
-        # Fill in username and password fields
+        # Fill in username and password field
         print("Filling in username and password...")
         username_field = driver.find_element(By.ID, "username")
         password_field = driver.find_element(By.ID, "password")
