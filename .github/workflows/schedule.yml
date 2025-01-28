@@ -1,12 +1,12 @@
-name: NUWorksBot
+name: Job Scraper
 
 on:
-  workflow_dispatch: # Allows you to trigger manually
   schedule:
-    - cron: "0 * * * *" # Runs every hour (adjust as needed)
+    - cron: "0 * * * *" # Runs every hour
+  workflow_dispatch: # Allows manual runs
 
 jobs:
-  scrape_jobs:
+  scrape-jobs:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,13 +19,17 @@ jobs:
           python-version: "3.9"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run job scraper
-        env: # Pass secrets as environment variables
+        env:
           USERNAME: ${{ secrets.USERNAME }}
           PASSWORD: ${{ secrets.PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          python script.py
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        run: python script.py

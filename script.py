@@ -7,6 +7,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from webdriver_manager.chrome import ChromeDriverManager
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import os
 import time
 
@@ -16,6 +19,9 @@ username = os.getenv("USERNAME")
 password = os.getenv("PASSWORD")
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_KEY")
+email_address = os.getenv("EMAIL_ADDRESS")
+email_password = os.getenv("EMAIL_PASSWORD")
+recipient_email = os.getenv("RECIPIENT_EMAIL")
 
 # Initialize Supabase client
 supabase: Client = create_client(supabase_url, supabase_key)
@@ -65,7 +71,6 @@ def scrape_jobs():
             EC.presence_of_element_located((By.ID, "duo_iframe"))
         )
         print("Switching to the Duo iframe...")
-        # Switch to the iframe
         driver.switch_to.frame(duo_iframe)
 
         # Locate the "Send Me a Push" button inside the iframe
@@ -95,7 +100,7 @@ def scrape_jobs():
                 company = job_element.find_element(By.CLASS_NAME, "list-item-subtitle").text
 
                 # Filter titles containing 'Software' or 'AI'
-                if "Software" in title or "AI" in title:
+                if (("Software" in title or "AI" in title) or "Machine Learning" in title) or "Artificial Intelligence" in title:
                     jobs.append({"title": title, "company": company})
             except Exception as e:
                 print(f"Error extracting job details: {e}")
@@ -129,6 +134,7 @@ def insert_into_supabase(jobs):
             response = supabase.table("jobs").insert(new_jobs).execute()
             print(f"Inserted {len(new_jobs)} new jobs into Supabase.")
             print("Response:", response)
+            send_email_notification(new_jobs)
             return len(new_jobs)
         else:
             print("No new jobs found.")
@@ -137,6 +143,31 @@ def insert_into_supabase(jobs):
     except Exception as e:
         print(f"Failed to insert data into Supabase: {e}")
         return 0
+
+
+def send_email_notification(new_jobs):
+    try:
+        print("Sending email notification...")
+        subject = "New Jobs Alert"
+        body = "The following new jobs have been posted:\n\n"
+        for job in new_jobs:
+            body += f"Title: {job['title']}\nCompany: {job['company']}\n\n"
+
+        msg = MIMEMultipart()
+        msg["From"] = email_address
+        msg["To"] = recipient_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+
+        # Set up the SMTP server
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(email_address, email_password)
+            server.send_message(msg)
+
+        print("Email sent successfully!")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
 
 
 # Run the scraping job and return the number of new jobs added
