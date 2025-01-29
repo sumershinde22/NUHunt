@@ -13,6 +13,7 @@ from email.mime.multipart import MIMEMultipart
 import os
 import time
 
+start_time = time.time()
 # Load environment variables from .env
 load_dotenv()
 username = os.getenv("USERNAME")
@@ -203,3 +204,7 @@ try:
         print(f"Number of new jobs added to '{table_name}': {new_jobs_count}")
 finally:
     driver.quit()
+
+end_time = time.time()
+
+print(f"Finished in {round(end_time - start_time, 2)} seconds.")
