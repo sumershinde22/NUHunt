@@ -194,8 +194,8 @@ def send_email_notification(new_jobs, table_name):
 try:
     login()
     job_links = {
-        "fall_khoury_eng": "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=2000&page=1&sort=!postdate&ocr=f&targeted_academic_majors=0060,0160&el_work_term=62e86769398ef06e8102c40d39502733&exclude_applied_jobs=1",
-        "summer_khoury": "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=2000&page=1&sort=!postdate&ocr=f&targeted_academic_majors=0160&el_work_term=37226e910d4151f066cd60e5177508b6&exclude_applied_jobs=1"
+        "fall_jobs": "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=5000&page=1&sort=!postdate&ocr=f&el_work_term=62e86769398ef06e8102c40d39502733&exclude_applied_jobs=1",
+        "summer_jobs": "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=5000&page=1&sort=!postdate&ocr=f&el_work_term=37226e910d4151f066cd60e5177508b6&exclude_applied_jobs=1"
     }
 
     for table_name, url in job_links.items():
