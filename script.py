@@ -166,7 +166,8 @@ def update_supabase(jobs, table_name):
 
     except Exception as e:
         print(f"Failed to update table '{table_name}': {e}")
-        return 0
+        driver.quit()
+        raise e
 
 
 def scrape_jobs(url, table_name):
