@@ -7,7 +7,7 @@ NUHunt is an automated job scraping bot designed for Northeastern University stu
 - **Job Filtering**: Captures job titles containing "Software", "AI", "Machine Learning", or "Artificial Intelligence".
 - **Database Integration**: Stores and updates job listings in Supabase.
 - **Email Alerts**: Sends notifications when new jobs are posted.
-- **Job Cleanup**: Removes job listings that are no longer available.
+- **Job Cleanup**: Removes job listings once you have applied to them.
 - **GitHub Actions Support**: Runs automatically on a schedule.
 
 ## Installation
