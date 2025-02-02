@@ -1,4 +1,13 @@
 import json
+import time
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
+
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -6,16 +15,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from dotenv import load_dotenv
-from supabase import create_client, Client
 from webdriver_manager.chrome import ChromeDriverManager
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-import os
-import time
 
 start_time = time.time()
+
 # Load environment variables from .env
 load_dotenv()
 username = os.getenv("USERNAME")
@@ -32,7 +35,7 @@ supabase: Client = create_client(supabase_url, supabase_key)
 # Set up ChromeDriver dynamically
 chrome_service = Service(ChromeDriverManager().install())
 chrome_options = Options()
-chrome_options.add_argument("--headless")  # Headless mode to avoid opening browser
+# chrome_options.add_argument("--headless")  # Run in headless mode
 chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--start-maximized")
 chrome_options.add_argument("--disable-blink-features=AutomationControlled")
@@ -41,14 +44,17 @@ chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
 
 def save_cookies():
-    """Saves cookies to Supabase."""
+    """Saves cookies to Supabase; 'updated_at' is auto-managed by Supabase/Postgres."""
     try:
         cookies = driver.get_cookies()
         cookies_json = json.dumps(cookies)
 
-        # Store in Supabase
-        response = supabase.table("cookies").upsert(
-            {"id": 1, "cookies": cookies_json}
+        # Upsert into Supabase. 'updated_at' is automatically updated if your DB is configured that way.
+        supabase.table("cookies").upsert(
+            {
+                "id": 1,
+                "cookies": cookies_json
+            }
         ).execute()
 
         print("Cookies saved to Supabase.")
@@ -57,16 +63,35 @@ def save_cookies():
 
 
 def load_cookies():
-    """Loads cookies from Supabase and applies them to WebDriver."""
+    """
+    Loads cookies from Supabase if they exist AND are not older than 5 hours.
+    Returns True if fresh cookies are loaded; otherwise False.
+    """
     try:
-        # Fetch cookies from Supabase
-        response = supabase.table("cookies").select("cookies").eq("id", 1).single().execute()
+        # Fetch cookies from Supabase, including the 'updated_at' column
+        response = supabase.table("cookies").select("*").eq("id", 1).single().execute()
+        data = response.data
 
-        if not response.data:
+        if not data:
             print("No saved cookies in Supabase.")
             return False
 
-        cookies = json.loads(response.data["cookies"])
+        # Parse the updated_at timestamp
+        # The format is something like '2025-02-02 02:47:09.559213' (UTC or naive)
+        updated_at_str = data["updated_at"]
+        updated_at_dt = datetime.fromisoformat(updated_at_str)  # parses fractional seconds as well
+
+        # Calculate time difference in seconds
+        time_diff_seconds = (datetime.now() - updated_at_dt).total_seconds()
+
+        # If older than 5 hours (18,000 seconds), clear and force new login
+        if time_diff_seconds > 18000:
+            print("Saved cookies are older than 5 hours. Clearing cookies table entry.")
+            supabase.table("cookies").delete().eq("id", 1).execute()
+            return False
+
+        # Otherwise, cookies are fresh enough; load them
+        cookies = json.loads(data["cookies"])
         driver.get("https://northeastern-csm.symplicity.com/students/app/home")
 
         for cookie in cookies:
@@ -147,8 +172,10 @@ def update_supabase(jobs, table_name):
 
         new_jobs = [job for job in jobs if (job["title"], job["company"]) not in existing_jobs_set]
         current_jobs_set = {(job["title"], job["company"]) for job in jobs}
-        outdated_jobs = [job_id for (title, company), job_id in existing_jobs_set.items()
-                         if (title, company) not in current_jobs_set]
+        outdated_jobs = [
+            job_id for (title, company), job_id in existing_jobs_set.items()
+            if (title, company) not in current_jobs_set
+        ]
 
         if new_jobs:
             supabase.table(table_name).insert(new_jobs).execute()
@@ -187,7 +214,8 @@ def scrape_jobs(url, table_name):
                 title = job_element.find_element(By.CLASS_NAME, "list-item-title").text
                 company = job_element.find_element(By.CLASS_NAME, "list-item-subtitle").text
 
-                if "Software" in title or "AI" in title or "Machine Learning" in title or "Artificial Intelligence" in title:
+                # Filter based on keywords
+                if any(keyword in title for keyword in ("Software", "AI", "Machine Learning", "Artificial Intelligence")):
                     jobs.append({"title": title, "company": company})
             except Exception as e:
                 print(f"Error extracting job details: {e}")
@@ -198,6 +226,7 @@ def scrape_jobs(url, table_name):
     except Exception as e:
         print(f"An error occurred during scraping: {e}")
         return 0
+
 
 def send_email_notification(new_jobs, table_name):
     """Sends an email notification with the new job postings."""
@@ -225,12 +254,24 @@ def send_email_notification(new_jobs, table_name):
 
 # Main script
 try:
-    if not load_cookies():  # Try using cookies first
-        login()  # If cookies fail, log in manually
+    # Attempt to load existing cookies.
+    # If none found OR they're older than 5 hours, do a fresh login.
+    if not load_cookies():
+        login()
 
     job_links = {
-        "fall_jobs": "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=5000&page=1&sort=!postdate&ocr=f&el_work_term=62e86769398ef06e8102c40d39502733&exclude_applied_jobs=1",
-        "summer_jobs": "https://northeastern-csm.symplicity.com/students/app/jobs/search?perPage=5000&page=1&sort=!postdate&ocr=f&el_work_term=37226e910d4151f066cd60e5177508b6&exclude_applied_jobs=1"
+        "fall_jobs": (
+            "https://northeastern-csm.symplicity.com/students/app/jobs/search"
+            "?perPage=5000&page=1&sort=!postdate&ocr=f"
+            "&el_work_term=62e86769398ef06e8102c40d39502733"
+            "&exclude_applied_jobs=1"
+        ),
+        "summer_jobs": (
+            "https://northeastern-csm.symplicity.com/students/app/jobs/search"
+            "?perPage=5000&page=1&sort=!postdate&ocr=f"
+            "&el_work_term=37226e910d4151f066cd60e5177508b6"
+            "&exclude_applied_jobs=1"
+        )
     }
 
     for table_name, url in job_links.items():
