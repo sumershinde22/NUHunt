@@ -35,7 +35,7 @@ supabase: Client = create_client(supabase_url, supabase_key)
 # Set up ChromeDriver dynamically
 chrome_service = Service(ChromeDriverManager().install())
 chrome_options = Options()
-# chrome_options.add_argument("--headless")  # Run in headless mode
+chrome_options.add_argument("--headless")  # Run in headless mode
 chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--start-maximized")
 chrome_options.add_argument("--disable-blink-features=AutomationControlled")
