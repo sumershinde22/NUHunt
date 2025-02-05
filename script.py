@@ -215,7 +215,7 @@ def scrape_jobs(url, table_name):
                 company = job_element.find_element(By.CLASS_NAME, "list-item-subtitle").text
 
                 # Filter based on keywords
-                if any(keyword in title for keyword in ("Software", "AI", "Machine Learning", "Artificial Intelligence")):
+                if any(keyword in title for keyword in ("Software", "AI", "Machine Learning", "Artificial Intelligence", "ML")):
                     jobs.append({"title": title, "company": company})
             except Exception as e:
                 print(f"Error extracting job details: {e}")
