@@ -5,7 +5,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-
+from dateutil import parser
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -35,13 +35,14 @@ supabase: Client = create_client(supabase_url, supabase_key)
 # Set up ChromeDriver dynamically
 chrome_service = Service(ChromeDriverManager().install())
 chrome_options = Options()
-chrome_options.add_argument("--headless")  # Run in headless mode
+# chrome_options.add_argument("--headless")  # Run in headless mode
 chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--start-maximized")
 chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 
 # Initialize WebDriver
 driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
+driver.set_page_load_timeout(10000)
 
 def save_cookies():
     """Saves cookies to Supabase; 'updated_at' is auto-managed by Supabase/Postgres."""
@@ -63,12 +64,8 @@ def save_cookies():
 
 
 def load_cookies():
-    """
-    Loads cookies from Supabase if they exist AND are not older than 5 hours.
-    Returns True if fresh cookies are loaded; otherwise False.
-    """
+    """Loads cookies from Supabase if they exist AND are not older than 5 hours."""
     try:
-        # Fetch cookies from Supabase, including the 'updated_at' column
         response = supabase.table("cookies").select("*").eq("id", 1).single().execute()
         data = response.data
 
@@ -76,34 +73,43 @@ def load_cookies():
             print("No saved cookies in Supabase.")
             return False
 
-        # Parse the updated_at timestamp
-        # The format is something like '2025-02-02 02:47:09.559213' (UTC or naive)
         updated_at_str = data["updated_at"]
-        updated_at_dt = datetime.fromisoformat(updated_at_str)  # parses fractional seconds as well
+        print(f"Raw updated_at timestamp from Supabase: {updated_at_str}")
 
-        # Calculate time difference in seconds
+        # Use dateutil.parser to parse the timestamp more flexibly
+        try:
+            updated_at_dt = parser.isoparse(updated_at_str)  # Handles various timestamp formats
+        except ValueError as ve:
+            print(f"Error parsing timestamp '{updated_at_str}': {ve}")
+            return False
+
         time_diff_seconds = (datetime.now() - updated_at_dt).total_seconds()
-
-        # If older than 5 hours (18,000 seconds), clear and force new login
         if time_diff_seconds > 18000:
             print("Saved cookies are older than 5 hours. Clearing cookies table entry.")
             supabase.table("cookies").delete().eq("id", 1).execute()
             return False
 
-        # Otherwise, cookies are fresh enough; load them
         cookies = json.loads(data["cookies"])
         driver.get("https://northeastern-csm.symplicity.com/students/app/home")
 
         for cookie in cookies:
+            print(f"Attempting to set cookie: {cookie}")
+            if "domain" in cookie:
+                if "northeastern-csm.symplicity.com" not in cookie["domain"]:
+                    print(f"Warning: Cookie domain mismatch! Expected 'northeastern-csm.symplicity.com', but got {cookie['domain']}. Skipping this cookie.")
+                    continue
             driver.add_cookie(cookie)
 
         driver.refresh()
-        print("Cookies loaded from Supabase.")
+        print("Cookies loaded from Supabase successfully.")
         return True
 
     except Exception as e:
         print(f"Error loading cookies from Supabase: {e}")
+        import traceback
+        print(traceback.format_exc())  # This prints the full stack trace for debugging.
         return False
+
 
 
 def login():
@@ -203,29 +209,37 @@ def scrape_jobs(url, table_name):
         print(f"Navigating to {url}...")
         driver.get(url)
 
-        WebDriverWait(driver, 60).until(
+        WebDriverWait(driver, timeout=100000).until(
             EC.presence_of_element_located((By.ID, "list"))
         )
-
+        print("Found")
         jobs = []
         job_elements = driver.find_elements(By.CLASS_NAME, "list-item-body")
+        if not job_elements:
+            raise ValueError("No job elements found on the page. The structure may have changed.")
+
         for job_element in job_elements:
             try:
                 title = job_element.find_element(By.CLASS_NAME, "list-item-title").text
                 company = job_element.find_element(By.CLASS_NAME, "list-item-subtitle").text
-
-                # Filter based on keywords
                 if any(keyword in title for keyword in ("Software", "AI", "Machine Learning", "Artificial Intelligence", "ML")):
                     jobs.append({"title": title, "company": company})
             except Exception as e:
                 print(f"Error extracting job details: {e}")
+                import traceback
+                print(traceback.format_exc())
 
         print(f"Scraped {len(jobs)} jobs matching the criteria.")
         return update_supabase(jobs, table_name) if jobs else 0
 
+    except ValueError as ve:
+        print(f"Scraping error: {ve}")
     except Exception as e:
         print(f"An error occurred during scraping: {e}")
+        import traceback
+        print(traceback.format_exc())
         return 0
+
 
 
 def send_email_notification(new_jobs, table_name):
