@@ -1,11 +1,6 @@
 name: Job Scraper
 
 on:
-  schedule:
-    # Runs every 30 minutes from 9 AM to 11:59 PM EST (14:00 to 23:00 UTC)
-    - cron: "*/30 14-23 * * *"
-    # Runs every 30 minutes from 12 AM to 2:59 AM EST (00:00 to 03:00 UTC)
-    - cron: "*/30 0-3 * * *"
   workflow_dispatch: # Allows manual runs
 
 jobs:
